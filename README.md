@@ -13,9 +13,8 @@ This project will show you how to create a Terminal Email Client to read, reply,
 You'll need the following values:
 
 ```text
-ACCESS_TOKEN = ""
-CLIENT_ID = ""
-CLIENT_SECRET = ""
+V3_TOKEN =
+GRANT_ID =
 ```
 
 Add the above values to a new `.env` file:
