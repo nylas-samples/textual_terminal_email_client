@@ -2,25 +2,24 @@
 from dotenv import load_dotenv
 import os
 from rich.text import Text
-from nylas import APIClient  # type: ignore
+from nylas import Client
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
-from textual.widgets import DataTable, Label, Header, Footer, Input, Button
+from textual.widgets import DataTable, Label, Header, Footer, Input, Button, TextArea
 from textual.screen import Screen
 from textual.binding import Binding
-import datetime
 from bs4 import BeautifulSoup
 import textwrap
 from typing import List, Any
+from nylas.models.messages import ListMessagesQueryParams
+from nylas.models.messages import UpdateMessageRequest
 
 # Load your env variables
 load_dotenv()
 
 # Initialize an instance of the Nylas SDK using the client credentials
-nylas = APIClient(
-    os.environ.get("CLIENT_ID"),
-    os.environ.get("CLIENT_SECRET"),
-    os.environ.get("ACCESS_TOKEN"),
+nylas = Client(
+    api_key = os.environ.get("V3_TOKEN")
 )
 
 # Create the header of the Data Table
@@ -28,44 +27,39 @@ ROWS = [("Date", "Subject", "From", "Unread")]
 
 # Global variables
 messageid = []
-labelsDict = {}
-labels = nylas.labels.all()
-for label in labels:
-    labelsDict[label["name"]] = label["id"]
 
 # Get the body of a particular message clean of HTML tags
 def get_message(self, message_id: str) -> str:
     body = ""
-    message = nylas.messages.get(message_id)
+    message, _ = nylas.messages.find(os.environ.get("GRANT_ID"), message_id)
     soup = BeautifulSoup(message.body, "html.parser")
     for data in soup(["style", "script"]):
         data.decompose()
     wrapper = textwrap.TextWrapper(width=75)
     word_list = wrapper.wrap(text=" ".join(soup.stripped_strings))
-    body = ""
     for word in word_list:
         body = body + word + "\n"
-    if self is not None:
-        try:
-            message.mark_as_read()
-            message.save()
-        except Exception:
-            if message.unread == True: 
-                self.populate_table()
+    if message.unread is True:
+        request_body = UpdateMessageRequest(unread = False)
+        nylas.messages.update(os.environ.get("GRANT_ID"), message_id, request_body)
+        self.populate_table()
     return body
 
 # Read the first 5 messages of our inbox
 def get_messages() -> List[Any]:
-    messages = nylas.messages.where(in_="inbox", limit=5)
+# Create query parameters
+    query_params = ListMessagesQueryParams(
+        {'in' : "inbox", 'limit': 5}
+   )
+	
+    messages, _, _ = nylas.messages.list(os.environ.get("GRANT_ID"), query_params)
     ROWS.clear()
     ROWS.append(("Date", "Subject", "From", "Unread"))
     for message in messages:
-        _from = message.from_[0]["name"] + " / " + message.from_[0]["email"]
+        _from = message.from_[0]['name'] + " / " + message.from_[0]['email']
         ROWS.append(
             (
-                datetime.datetime.fromtimestamp(message.date).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
+                message.date,
                 message.subject[0:50],
                 _from,
                 message.unread,
@@ -143,11 +137,10 @@ class EmailApp(App):
 # We're deleting an email
     def action_delete(self) -> None:
         try:
-            _message = nylas.messages.get(self.id_message)
-            _message.add_label(labelsDict["trash"])
-            _message.save()
+            nylas.messages.destroy(os.environ.get("GRANT_ID"), self.id_message)
+            self.populate_table()
         except Exception as e:
-            pass
+            print(e)
             self.populate_table()
 
 # We want to Compose a new email
@@ -182,12 +175,9 @@ class ReplyScreen(Screen):
         yield Footer()
         yield Input(id="email_from")
         yield Input(id="title")
-        yield Label(id="body")
-        yield Label("======================")
-        yield Input(id="first")
-        yield Input(id="second")
-        yield Input(id="third")
-        yield Input(id="fourth")
+        body = TextArea(id="body")
+        body.show_line_numbers = False
+        yield body
         yield Horizontal(
             Button("Send!", variant="primary", id="send"),
             Label(" "),
@@ -196,44 +186,32 @@ class ReplyScreen(Screen):
 
 # After we load the components, fill up their data
     def on_mount(self) -> None:
-        message = nylas.messages.get(messageid[0])
-        body = self.query_one("#body", Label)
-        self.query_one("#email_from").value = message.from_[0]["email"]
+        pass
+        message =  nylas.messages.find(os.environ.get("GRANT_ID"), messageid[0]).data
+        self.query_one("#body").text = "<br>====<br>" + get_message(self, messageid[0])
+        self.query_one("#body").text += "<br><br>Send from my Terminal Email Client" 
+        self.query_one("#email_from").value = message.from_[0]['email']
         self.query_one("#title").value = "Re: " + message.subject
-        body.update(get_message(None, messageid[0]))
 
 # Grab the information and send the reply to the email
     def send_email(self) -> None:
         participants = []
-        draft = nylas.drafts.create()
-        list_of_emails = self.query_one("#email_from").value.split(";")
-        draft.subject = self.query_one("#title").value
-        draft.body = (
-            self.query_one("#first").value
-            + "\n"
-            + self.query_one("#second").value
-            + "\n"
-            + self.query_one("#third").value
-            + "\n"
-            + self.query_one("#fourth").value
-        )
+        list_of_emails = self.query_one("#email_from").value.split(";")        
         for i in range(0, len(list_of_emails)):
-            participants.append({"name": "", "email": list_of_emails[i]})
-        draft.to = participants
-        draft.reply_to_message_id = messageid[0]
+            participants.append({"name": "", "email": list_of_emails[i]})        
+        
+        body = {"subject" : self.query_one("#title").value, 
+                     "body": self.query_one("#body").text,
+                     "to":participants}
         try:
-            draft.send()
+            nylas.messages.send(os.environ.get("GRANT_ID"), request_body = body)
             self.query_one("#email_from").value = ""
             self.query_one("#title").value = ""
-            self.query_one("#first").value = ""
-            self.query_one("#second").value = ""
-            self.query_one("#third").value = ""
-            self.query_one("#fourth").value = ""
             messageid.clear()
             participants.clear()
             app.pop_screen()
         except Exception as e:
-            print(e.message)
+            print(e)
 
 # This commands should not work on this screen
     def action_delete(self) -> None:
@@ -281,11 +259,10 @@ class ComposeEmail(Screen):
         yield Footer()
         yield Input(placeholder="Email To", id="email_to")
         yield Input(placeholder="Title", id="title")
-        yield Label("======================")
-        yield Input(id="first")
-        yield Input(id="second")
-        yield Input(id="third")
-        yield Input(id="fourth")
+        body = TextArea(id="body")
+        body.show_line_numbers = False
+        body.text = "<br><br>Send from my Terminal Email Client"
+        yield body
         yield Horizontal(
             Button("Send!", variant="primary", id="send"),
             Label(" "),
@@ -295,33 +272,20 @@ class ComposeEmail(Screen):
 # Grab the information and send the email
     def send_email(self) -> None:
         participants = []
-        draft = nylas.drafts.create()
         list_of_emails = self.query_one("#email_to").value.split(";")
-        draft.subject = self.query_one("#title").value
-        draft.body = (
-            self.query_one("#first").value
-            + "\n"
-            + self.query_one("#second").value
-            + "\n"
-            + self.query_one("#third").value
-            + "\n"
-            + self.query_one("#fourth").value
-        )
+        body = self.query_one("#body").text
         for i in range(0, len(list_of_emails)):
-            participants.append({"name": "", "email": list_of_emails[i]})
-        draft.to = participants
+            participants.append({"name": "", "email": list_of_emails[i]})        
+        
+        body = {"subject" : self.query_one("#title").value, 
+                     "body": self.query_one("#body").text,
+                     "to":participants}
         try:
-            draft.send()
-            self.query_one("#email_to").value = ""
-            self.query_one("#title").value = ""
-            self.query_one("#first").value = ""
-            self.query_one("#second").value = ""
-            self.query_one("#third").value = ""
-            self.query_one("#fourth").value = ""
+            nylas.messages.send(os.environ.get("GRANT_ID"), request_body = body)
             participants.clear()
             app.pop_screen()
         except Exception as e:
-            print(e.message)
+            print(e)
 
 # This commands should not work on this screen
     def action_delete(self) -> None:
