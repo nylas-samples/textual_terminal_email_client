@@ -13,7 +13,8 @@ This project will show you how to create a Terminal Email Client to read, reply,
 You'll need the following values:
 
 ```text
-V3_TOKEN =
+NYLAS_API_KEY =
+NYLAS_API_URI =
 GRANT_ID =
 ```
 
@@ -38,7 +39,36 @@ Clone the repository. Go to your terminal and type:
 $ cd terminal_email_client
 $ python3 email_client.py
 ```
+# Or you can simply run:
 
-## Learn more
+```bash
+pip install textual-email-client
+```
+
+Once installed, you will need to create an .env where the package was installed, for this you can use:
+
+```bash
+pip show text-email-client
+```
+
+Copy the location and then do:
+
+```
+nano /opt/homebrew/lib/python3.12/site-packages/.env
+```
+
+Using the the following values (Fill them with your Nylas information):
+
+```text
+NYLAS_API_KEY =
+NYLAS_API_URI =
+GRANT_ID =
+```
+
+Once installed you can call it straight from your terminal as:
+
+```
+emailClient
+```
 
 Visit our [Nylas Python SDK documentation](https://developer.nylas.com/docs/developer-tools/sdk/python-sdk/) to learn more.
