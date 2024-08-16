@@ -19,7 +19,8 @@ load_dotenv()
 
 # Initialize an instance of the Nylas SDK using the client credentials
 nylas = Client(
-    api_key = os.environ.get("V3_TOKEN")
+    api_key = os.getenv("NYLAS_API_KEY"),
+    api_uri = os.getenv("NYLAS_API_URI")
 )
 
 # Create the header of the Data Table
@@ -49,7 +50,7 @@ def get_message(self, message_id: str) -> str:
 def get_messages() -> List[Any]:
 # Create query parameters
     query_params = ListMessagesQueryParams(
-        {'in' : "inbox", 'limit': 5}
+        {'in' : "INBOX", 'limit': 5}
    )
 	
     messages, _, _ = nylas.messages.list(os.environ.get("GRANT_ID"), query_params)
@@ -77,6 +78,7 @@ class EmailApp(App):
         Binding("d", "delete", "Delete"),
         Binding("o", "compose", "Compose Email"),
         Binding("p", "reply", "Reply"),
+        Binding("x", "quit", "Quit"),
     ]
 
 # Class variables
@@ -155,6 +157,10 @@ class EmailApp(App):
     def action_reply(self) -> None:
         if len(messageid) > 0:
             self.push_screen(ReplyScreen())
+
+# We want to quit the app -:(
+    def action_quit(self) -> None:
+       self.exit()
 
 # Reply screen. This screen we will be displayed when we are
 # replying an email
